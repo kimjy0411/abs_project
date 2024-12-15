@@ -15,9 +15,9 @@ def move_images(source_dir, target_dir):
             print(f"Moved: {source_path} -> {target_path}")
 
 # Train 이미지 이동
-move_images("C:/Users/jykim/Document/abs/data/raw/train/images", "C:/Users/jykim/Document/abs/data/processed/train/images")
+move_images("C:/Users/jykim/Document/abs_project/data/raw/train/images", "C:/Users/jykim/Document/abs_project/data/processed/train/images")
 
 # Validation 이미지 이동
-move_images("C:/Users/jykim/Document/abs/data/raw/val/images", "C:/Users/jykim/Document/abs/data/processed/val/images")
+move_images("C:/Users/jykim/Document/abs_project/data/raw/val/images", "C:/Users/jykim/Document/abs_project/data/processed/val/images")
 
 print("모든 이미지 파일이 이동되었습니다.")

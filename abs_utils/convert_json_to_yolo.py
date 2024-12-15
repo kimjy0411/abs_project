@@ -59,7 +59,7 @@ def process_all_json_files(input_dir, output_dir):
             convert_json_to_yolo(os.path.join(input_dir, json_file), output_dir)
 
 # 입력과 출력 디렉토리 설정
-process_all_json_files("C:/Users/jykim/Document/abs/data/raw/train/labels", "C:/Users/jykim/Document/abs/data/processed/train/labels")  # Train JSON → YOLO 변환
-process_all_json_files("C:/Users/jykim/Document/abs/data/raw/val/labels", "C:/Users/jykim/Document/abs/data/processed/val/labels")      # Validation JSON → YOLO 변환
+process_all_json_files("C:/Users/jykim/Document/abs_project/data/raw/train/labels", "C:/Users/jykim/Document/abs_project/data/processed/train/labels")  # Train JSON → YOLO 변환
+process_all_json_files("C:/Users/jykim/Document/abs_project/data/raw/val/labels", "C:/Users/jykim/Document/abs_project/data/processed/val/labels")      # Validation JSON → YOLO 변환
 
 print("모든 JSON 파일이 YOLO 형식으로 변환되었습니다.")

@@ -38,10 +38,10 @@ def reduce_train_data(input_images_dir, input_labels_dir, output_images_dir, out
     print(f"TRAIN 데이터 축소 완료: {len(sampled_files)}개의 파일이 {output_images_dir}에 저장되었습니다.")
 
 # 경로 설정
-input_images_dir = "C:/Users/jykim/Document/abs/data/processed/train/images"
-input_labels_dir = "C:/Users/jykim/Document/abs/data/processed/train/labels"
-output_images_dir = "C:/Users/jykim/Document/abs/data/reduced/train/images"
-output_labels_dir = "C:/Users/jykim/Document/abs/data/reduced/train/labels"
+input_images_dir = "C:/Users/jykim/Document/abs_project/data/processed/train/images"
+input_labels_dir = "C:/Users/jykim/Document/abs_project/data/processed/train/labels"
+output_images_dir = "C:/Users/jykim/Document/abs_project/data/reduced/train/images"
+output_labels_dir = "C:/Users/jykim/Document/abs_project/data/reduced/train/labels"
 
 # 실행 (10% 축소)
 reduce_train_data(input_images_dir, input_labels_dir, output_images_dir, output_labels_dir, reduction_ratio=0.10)
