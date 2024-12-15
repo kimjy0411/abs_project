@@ -1,0 +1,9 @@
+env/
+
+yolov5/
+
+*.jpg
+*.png
+*.json
+*.txt
+
