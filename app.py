@@ -1,96 +1,86 @@
 import cv2
-import torch
 import os
+import torch
 
-# 모델 경로 및 비디오 폴더 설정
-MODEL_PATH = "models/best.pt"  # 학습된 YOLO 모델 경로
-VIDEO_FOLDER = "videos"        # 비디오 폴더 경로
+# 모델 불러오기
+MODEL_PATH = 'models/best2.pt'  # YOLO 모델 파일 경로
+VIDEOS_FOLDER = 'videos'  # 비디오 폴더 경로
 
-# 스트라이크 존 판정 함수
+print("모델 불러오는 중...")
+model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, force_reload=True)
+print("✅ 모델 불러오기 완료!")
+
+# 스트라이크 존 설정 (고정된 값: 이미지 좌표 기준)
+STRIKE_ZONE = (1000, 512, 1192, 674)  # (x_min, y_min, x_max, y_max)
+
 def is_strike(ball_position, strike_zone):
+    """공의 위치가 스트라이크 존에 있는지 확인합니다."""
     x, y = ball_position
     x_min, y_min, x_max, y_max = strike_zone
     return x_min <= x <= x_max and y_min <= y <= y_max
 
-# 포수와 타자 구분 함수
-def detect_catcher_and_batter(objects, image_height):
-    """
-    탐지된 객체 중 포수를 구분하기 위해 Y 좌표를 기준으로 가장 아래에 있는 객체를 포수로 판단합니다.
-    """
-    batter_position = None
-    catcher_position = None
+def process_frame(frame, ball_inside, last_position, last_label):
+    """프레임을 처리하고 스트라이크/볼 판정을 수행합니다."""
+    ball_position = None
 
-    for obj in objects:
-        label, x_center, y_center = obj['label'], obj['x_center'], obj['y_center']
+    # YOLO 모델로 객체 탐지
+    results = model(frame)
 
-        # 타자 객체인 경우
-        if label == "Batter":
-            batter_position = (x_center, y_center)
-
-        # 포수 객체는 타자보다 아래에 위치한다고 가정 (Y 좌표가 크면 화면상 아래)
-        if label == "Catcher" or (batter_position and y_center > batter_position[1]):
-            catcher_position = (x_center, y_center)
-
-    return batter_position, catcher_position
-
-# 프레임 처리 함수
-def process_frame(frame, model):
-    results = model(frame)  # YOLO 모델 추론
-    objects = []
-
-    # 탐지된 객체 리스트에 추가
     for _, row in results.pandas().xyxy[0].iterrows():
-        label = row['name']
-        x_center = int((row['xmin'] + row['xmax']) / 2)
-        y_center = int((row['ymin'] + row['ymax']) / 2)
-        objects.append({'label': label, 'x_center': x_center, 'y_center': y_center})
+        class_name = row['name']
+        if class_name == 'Baseball_ball':  # 공 탐지
+            x_center = int((row['xmin'] + row['xmax']) / 2)
+            y_center = int((row['ymin'] + row['ymax']) / 2)
+            ball_position = (x_center, y_center)
+            last_position = ball_position  # 마지막 위치 업데이트
+            break
 
-    # 화면 높이
-    height, _, _ = frame.shape
+    # 공이 탐지되었는지 확인
+    if ball_position:
+        is_strike_result = is_strike(ball_position, STRIKE_ZONE)
+        label = "Ball"  # 기본값
+        color = (0, 0, 255)  # 빨간색
 
-    # 포수와 타자 구분
-    batter, catcher = detect_catcher_and_batter(objects, height)
+        if is_strike_result:
+            label = "Strike"
+            color = (0, 255, 0)  # 초록색
 
-    # 스트라이크 존 설정 (타자의 Y 좌표를 기준으로 설정)
-    if batter:
-        strike_zone = (
-            batter[0] - 50, batter[1] - 100,  # x_min, y_min
-            batter[0] + 50, batter[1] + 100   # x_max, y_max
-        )
-    elif catcher:  # 타자가 없을 경우 포수를 기준으로 설정
-        strike_zone = (
-            catcher[0] - 50, catcher[1] - 100,
-            catcher[0] + 50, catcher[1] + 100
-        )
+        ball_inside = True  # 공이 탐지된 상태
+
+        # 시각화
+        cv2.rectangle(frame, (STRIKE_ZONE[0], STRIKE_ZONE[1]), (STRIKE_ZONE[2], STRIKE_ZONE[3]), (255, 255, 255), 2)
+        cv2.circle(frame, ball_position, 10, color, -1)
+        cv2.putText(frame, label, (ball_position[0] - 20, ball_position[1] - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+        last_label = None  # 탐지 중이므로 판정 초기화
     else:
-        return frame  # 타자와 포수를 모두 탐지하지 못한 경우 처리 생략
+        # 공이 탐지되지 않을 때 마지막 위치를 기준으로 판정
+        if last_position:
+            if is_strike(last_position, STRIKE_ZONE):
+                last_label = "STRIKE"
+            else:
+                last_label = "BALL"
+            last_position = None  # 판정 후 마지막 위치 초기화
 
-    # 공 탐지 및 스트라이크/볼 판정
-    for obj in objects:
-        if obj['label'] == "Baseball_ball":
-            ball_position = (obj['x_center'], obj['y_center'])
-            is_strike_result = is_strike(ball_position, strike_zone)
+    # 화면 중앙에 판정 결과 출력
+    if last_label:
+        color = (0, 255, 0) if last_label == "STRIKE" else (0, 0, 255)
+        cv2.putText(frame, last_label, (300, 200), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 5)
 
-            # 결과 표시
-            label = "Strike" if is_strike_result else "Ball"
-            color = (0, 255, 0) if is_strike_result else (0, 0, 255)
-            cv2.rectangle(frame, (strike_zone[0], strike_zone[1]),
-                          (strike_zone[2], strike_zone[3]), (255, 255, 255), 2)  # 스트라이크 존
-            cv2.circle(frame, ball_position, 10, color, -1)  # 공 위치
-            cv2.putText(frame, label, (ball_position[0] - 20, ball_position[1] - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+    return frame, ball_inside, last_position, last_label
 
-    return frame
-
-# 비디오 처리 함수
-def process_video(video_path, output_path, model):
+def process_video(video_path):
+    """비디오 파일을 처리하고 실시간으로 출력합니다."""
     cap = cv2.VideoCapture(video_path)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if not cap.isOpened():
+        print("⚠️ 비디오를 열 수 없습니다.")
+        return
 
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    resize_width, resize_height = 640, 480  # 화면 크기 조정
+    ball_inside = False  # 공이 스트라이크 존 안에 있는지 상태 변수
+    last_position = None  # 공의 마지막 위치
+    last_label = None  # 최종 판정 결과
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -98,29 +88,43 @@ def process_video(video_path, output_path, model):
             break
 
         # 프레임 처리
-        frame = process_frame(frame, model)
+        processed_frame, ball_inside, last_position, last_label = process_frame(
+            frame, ball_inside, last_position, last_label
+        )
 
-        # 결과 프레임 저장
-        out.write(frame)
+        # 화면 크기 조정
+        resized_frame = cv2.resize(processed_frame, (resize_width, resize_height))
+
+        # 화면에 표시
+        cv2.imshow("Strike/Ball Detection", resized_frame)
+
+        # 종료 조건: ESC 키 누르면 종료
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
 
     cap.release()
-    out.release()
-    print(f"✅ 비디오 처리 완료: {output_path}")
+    cv2.destroyAllWindows()
 
-# 메인 함수
 def main():
-    print("모델 불러오는 중...")
-    model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, force_reload=True)
-    print("✅ 모델 불러오기 완료!")
+    print("✅ 실시간 스트라이크/볼 판정을 시작합니다.")
+    print("📂 비디오 폴더에서 영상을 불러옵니다...")
 
-    # 비디오 처리
-    video_input = os.path.join(VIDEO_FOLDER, "input_video.mp4")
-    video_output = os.path.join(VIDEO_FOLDER, "output_video.mp4")
-    print("비디오 처리 중...")
-    process_video(video_input, video_output, model)
+    # 비디오 폴더 내 파일 목록 가져오기
+    video_files = [f for f in os.listdir(VIDEOS_FOLDER) if f.endswith(('.mp4', '.avi', '.mov'))]
+    if not video_files:
+        print("⚠️ 비디오 폴더에 영상 파일이 없습니다.")
+        return
 
-    print("✅ 스트라이크/볼 판정 완료!")
-    print(f"📁 결과 비디오 경로: {video_output}")
+    # 비디오 선택 및 처리
+    for i, video_file in enumerate(video_files):
+        print(f"{i + 1}. {video_file}")
+    choice = int(input("재생할 비디오 번호를 입력하세요: ")) - 1
+
+    if 0 <= choice < len(video_files):
+        selected_video = os.path.join(VIDEOS_FOLDER, video_files[choice])
+        process_video(selected_video)
+    else:
+        print("⚠️ 잘못된 입력입니다.")
 
 if __name__ == "__main__":
     main()
