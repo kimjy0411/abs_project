@@ -1,6 +1,7 @@
 import cv2
 import os
 import torch
+import time
 
 # 모델 불러오기
 MODEL_PATH = 'models/best2.pt'  # YOLO 모델 파일 경로
@@ -19,13 +20,12 @@ def is_strike(ball_position, strike_zone):
     x_min, y_min, x_max, y_max = strike_zone
     return x_min <= x <= x_max and y_min <= y <= y_max
 
-def process_frame(frame, ball_inside, last_position, last_label):
+def process_frame(frame, ball_inside, last_position, last_label, display_timer):
     """프레임을 처리하고 스트라이크/볼 판정을 수행합니다."""
     ball_position = None
-
-    # YOLO 모델로 객체 탐지
     results = model(frame)
 
+    # YOLO 모델로 객체 탐지
     for _, row in results.pandas().xyxy[0].iterrows():
         class_name = row['name']
         if class_name == 'Baseball_ball':  # 공 탐지
@@ -35,40 +35,37 @@ def process_frame(frame, ball_inside, last_position, last_label):
             last_position = ball_position  # 마지막 위치 업데이트
             break
 
-    # 공이 탐지되었는지 확인
+    # 공이 탐지된 경우
     if ball_position:
+        ball_inside = True  # 탐지 중
+        display_timer = None  # 타이머 초기화
+        last_label = None  # 탐지 중이므로 문구 초기화
+
+        # 스트라이크 존 시각화
         is_strike_result = is_strike(ball_position, STRIKE_ZONE)
-        label = "Ball"  # 기본값
-        color = (0, 0, 255)  # 빨간색
-
-        if is_strike_result:
-            label = "Strike"
-            color = (0, 255, 0)  # 초록색
-
-        ball_inside = True  # 공이 탐지된 상태
-
-        # 시각화
+        color = (0, 255, 0) if is_strike_result else (0, 0, 255)
         cv2.rectangle(frame, (STRIKE_ZONE[0], STRIKE_ZONE[1]), (STRIKE_ZONE[2], STRIKE_ZONE[3]), (255, 255, 255), 2)
         cv2.circle(frame, ball_position, 10, color, -1)
-        cv2.putText(frame, label, (ball_position[0] - 20, ball_position[1] - 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-
-        last_label = None  # 탐지 중이므로 판정 초기화
     else:
-        # 공이 탐지되지 않을 때 마지막 위치를 기준으로 판정
-        if last_position:
-            if is_strike(last_position, STRIKE_ZONE):
-                last_label = "STRIKE"
-            else:
-                last_label = "BALL"
-            last_position = None  # 판정 후 마지막 위치 초기화
+        # 탐지가 끝난 경우
+        if ball_inside:  # 탐지 상태였던 경우
+            if last_position:  # 마지막 좌표로 판정 수행
+                if is_strike(last_position, STRIKE_ZONE):
+                    last_label = "STRIKE"
+                else:
+                    last_label = "BALL"
+                display_timer = time.time()  # 문구 표시 시작 시간 설정
+            ball_inside = False  # 탐지 종료
 
-    # 화면 중앙에 판정 결과 출력
-    if last_label:
-        color = (0, 255, 0) if last_label == "STRIKE" else (0, 0, 255)
-        cv2.putText(frame, last_label, (300, 200), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 5)
+    # 문구를 1초 동안 표시
+    if last_label and display_timer:
+        if time.time() - display_timer < 1:  # 1초 동안 표시
+            color = (0, 255, 0) if last_label == "STRIKE" else (0, 0, 255)
+            cv2.putText(frame, last_label, (300, 200), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 5)
+        else:
+            last_label = None  # 1초 후 문구 제거
 
-    return frame, ball_inside, last_position, last_label
+    return frame, ball_inside, last_position, last_label, display_timer
 
 def process_video(video_path):
     """비디오 파일을 처리하고 실시간으로 출력합니다."""
@@ -81,6 +78,7 @@ def process_video(video_path):
     ball_inside = False  # 공이 스트라이크 존 안에 있는지 상태 변수
     last_position = None  # 공의 마지막 위치
     last_label = None  # 최종 판정 결과
+    display_timer = None  # 문구 표시 타이머
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -88,8 +86,8 @@ def process_video(video_path):
             break
 
         # 프레임 처리
-        processed_frame, ball_inside, last_position, last_label = process_frame(
-            frame, ball_inside, last_position, last_label
+        processed_frame, ball_inside, last_position, last_label, display_timer = process_frame(
+            frame, ball_inside, last_position, last_label, display_timer
         )
 
         # 화면 크기 조정
