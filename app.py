@@ -9,7 +9,7 @@ st.title("실시간 스트라이크/볼 판정 시스템")
 
 # 모델 로드
 st.info("모델 로드 중...")
-model = load_yolo_model()  # 모델 로드 함수
+model = load_yolo_model()
 st.success("모델 로드 완료!")
 
 # 동영상 업로드
@@ -31,8 +31,6 @@ if uploaded_video is not None:
         with st.spinner("동영상 처리 중..."):
             process_video(temp_input_file.name, output_path, model)
         st.success("스트라이크/볼 판정이 완료되었습니다!")
-
-        # 처리된 동영상 출력
         st.video(output_path)
 
     # 임시 파일 삭제

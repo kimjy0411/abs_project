@@ -1,5 +1,10 @@
 import cv2
-import os
+import numpy as np
+from sort import Sort  # SORT 라이브러리
+from ultralytics import YOLO  # YOLO 모델 로드
+
+# SORT 객체 초기화
+tracker = Sort()
 
 def is_strike(ball_position, strike_zone):
     """
@@ -19,48 +24,50 @@ def calculate_strike_zone(batter_bbox, height_ratio=(0.3, 0.7)):
     strike_zone_bottom = int(y_min + height * height_ratio[1])
     return (x_min, strike_zone_top, x_max, strike_zone_bottom)
 
-def is_valid_batter(bbox, frame_height, threshold_ratio=0.5):
+def process_frame_with_tracking(frame, model):
     """
-    타자를 포수와 구분하기 위해 높이 비율을 기준으로 판단합니다.
+    프레임을 처리하고 YOLO 모델과 SORT를 사용해 객체를 추적합니다.
     """
-    _, y_min, _, y_max = bbox
-    bbox_height = y_max - y_min
-    return bbox_height / frame_height >= threshold_ratio
-
-def process_frame(frame, model, frame_height):
-    """
-    프레임을 처리하고 YOLO 모델을 사용해 스트라이크/볼 판정을 수행합니다.
-    """
-    results = model(frame)
-    ball_position = None
+    results = model(frame)  # YOLO 탐지 결과
+    detections = []
     strike_zone = None
 
-    # 타자만 탐지 (높이 비율로 필터링)
-    for _, row in results.pandas().xyxy[0].iterrows():
-        if row['name'] == 'Batter':
-            bbox = (int(row['xmin']), int(row['ymin']), int(row['xmax']), int(row['ymax']))
-            if is_valid_batter(bbox, frame_height):
-                strike_zone = calculate_strike_zone(bbox)
-        elif row['name'] == 'Baseball_ball':
-            x_center = int((row['xmin'] + row['xmax']) / 2)
-            y_center = int((row['ymin'] + row['ymax']) / 2)
-            ball_position = (x_center, y_center)
+    # YOLO 탐지 결과를 SORT 입력 형식으로 변환
+    for result in results.pandas().xyxy[0].itertuples():
+        if result.name == "Batter":
+            # 타자 바운딩 박스 기반으로 스트라이크 존 생성
+            batter_bbox = (int(result.xmin), int(result.ymin), int(result.xmax), int(result.ymax))
+            strike_zone = calculate_strike_zone(batter_bbox)
+        elif result.name == "Baseball_ball":  # 공 탐지
+            x1, y1, x2, y2, conf = int(result.xmin), int(result.ymin), int(result.xmax), int(result.ymax), result.conf
+            detections.append([x1, y1, x2, y2, conf])
 
-    if ball_position is None or strike_zone is None:
-        return frame, None
+    # SORT 알고리즘으로 객체 추적
+    trackers = tracker.update(np.array(detections))
 
-    # 스트라이크/볼 판정
-    is_strike_result = is_strike(ball_position, strike_zone)
-    label = "Strike" if is_strike_result else "Ball"
-    color = (0, 255, 0) if is_strike_result else (0, 0, 255)
+    # 프레임에 결과 표시
+    for track in trackers:
+        x1, y1, x2, y2, track_id = map(int, track)
+        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2  # 공의 중심점
 
-    # 결과 표시
-    cv2.rectangle(frame, (strike_zone[0], strike_zone[1]), (strike_zone[2], strike_zone[3]), (255, 255, 255), 2)
-    cv2.circle(frame, ball_position, 10, color, -1)
-    cv2.putText(frame, label, (ball_position[0] - 20, ball_position[1] - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        # 스트라이크/볼 판정
+        if strike_zone:
+            is_strike_result = is_strike((center_x, center_y), strike_zone)
+            label = "Strike" if is_strike_result else "Ball"
+            color = (0, 255, 0) if is_strike_result else (0, 0, 255)
+        else:
+            label = "Tracking"
+            color = (255, 255, 0)
 
-    return frame, is_strike_result
+        # 공 위치 및 라벨 표시
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(frame, f"ID: {track_id} {label}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        # 스트라이크 존 표시
+        if strike_zone:
+            cv2.rectangle(frame, (strike_zone[0], strike_zone[1]), (strike_zone[2], strike_zone[3]), (255, 255, 255), 2)
+
+    return frame
 
 def process_video(input_path, output_path, model):
     """
@@ -71,7 +78,6 @@ def process_video(input_path, output_path, model):
     fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     while cap.isOpened():
@@ -79,7 +85,8 @@ def process_video(input_path, output_path, model):
         if not ret:
             break
 
-        frame, _ = process_frame(frame, model, height)
+        # 프레임 처리
+        frame = process_frame_with_tracking(frame, model)
         out.write(frame)
 
     cap.release()
