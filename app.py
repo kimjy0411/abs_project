@@ -47,8 +47,8 @@ def process_frame(frame, ball_inside, last_position, last_label, display_timer, 
         cv2.rectangle(frame, (STRIKE_ZONE[0], STRIKE_ZONE[1]), (STRIKE_ZONE[2], STRIKE_ZONE[3]), (255, 255, 255), 2)
         cv2.circle(frame, ball_position, 10, (0, 255, 0), -1)  # 초록색 원 (탐지 중)
     else:
-        # 탐지가 끊어진 경우: 0.5초 동안 탐지되지 않으면 종료 처리
-        if ball_inside and time.time() - detection_timer > 0.5:
+        # 탐지가 끊어진 경우: 1.75초 동안 탐지되지 않으면 종료 처리
+        if ball_inside and time.time() - detection_timer > 1.75:
             ball_inside = False  # 탐지 종료 상태 설정
             if last_position:  # 마지막 좌표로 판정 수행
                 if is_strike(last_position, STRIKE_ZONE):
@@ -60,7 +60,7 @@ def process_frame(frame, ball_inside, last_position, last_label, display_timer, 
 
     # 문구를 1초 동안 표시
     if last_label and display_timer:
-        if time.time() - display_timer < 1:  # 1초 동안 표시
+        if time.time() - display_timer < 1.5:  # 1초 동안 표시
             color = (0, 255, 0) if last_label == "STRIKE" else (0, 0, 255)
             cv2.putText(frame, last_label, (300, 200), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 5)
         else:
