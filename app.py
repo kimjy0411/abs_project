@@ -12,7 +12,7 @@ model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, force_re
 print("✅ 모델 불러오기 완료!")
 
 # 스트라이크 존 설정 (고정된 값: 이미지 좌표 기준)
-STRIKE_ZONE = (1000, 472, 1192, 634)  # (x_min, y_min - 20, x_max, y_max - 20)
+STRIKE_ZONE = (1000, 472, 1212, 634)  # (x_min, y_min - 20, x_max, y_max - 20)
   
 
 def is_strike(ball_position, strike_zone):
@@ -38,17 +38,19 @@ def process_frame(frame, ball_inside, last_position, last_label, display_timer, 
             detection_timer = time.time()  # 탐지 시점 타이머 업데이트
             break
 
+    # 스트라이크 존 항상 표시
+    cv2.rectangle(frame, (STRIKE_ZONE[0], STRIKE_ZONE[1]), (STRIKE_ZONE[2], STRIKE_ZONE[3]), (255, 0, 0), 2)
+
     # 공이 탐지 중일 때
     if ball_position:
         display_timer = None  # 문구 표시 타이머 초기화
         last_label = None     # 탐지 중이므로 문구 초기화
 
-        # 스트라이크 존 시각화
-        cv2.rectangle(frame, (STRIKE_ZONE[0], STRIKE_ZONE[1]), (STRIKE_ZONE[2], STRIKE_ZONE[3]), (255, 255, 255), 2)
+        # 공 위치 표시
         cv2.circle(frame, ball_position, 10, (0, 255, 0), -1)  # 초록색 원 (탐지 중)
     else:
         # 탐지가 끊어진 경우: 1.75초 동안 탐지되지 않으면 종료 처리
-        if ball_inside and time.time() - detection_timer > 1.75:
+        if ball_inside and time.time() - detection_timer > 1.5:
             ball_inside = False  # 탐지 종료 상태 설정
             if last_position:  # 마지막 좌표로 판정 수행
                 if is_strike(last_position, STRIKE_ZONE):
@@ -60,7 +62,7 @@ def process_frame(frame, ball_inside, last_position, last_label, display_timer, 
 
     # 문구를 1초 동안 표시
     if last_label and display_timer:
-        if time.time() - display_timer < 1.5:  # 1초 동안 표시
+        if time.time() - display_timer < 0.8:  # 1초 동안 표시
             color = (0, 255, 0) if last_label == "STRIKE" else (0, 0, 255)
             cv2.putText(frame, last_label, (300, 200), cv2.FONT_HERSHEY_SIMPLEX, 3, color, 5)
         else:
@@ -99,7 +101,7 @@ def process_video(video_path):
         cv2.imshow("Strike/Ball Detection", resized_frame)
 
         # 종료 조건: ESC 키 누르면 종료
-        if cv2.waitKey(1) & 0xFF == 27:
+        if cv2.waitKey(30) & 0xFF == 27:
             break
 
     cap.release()
